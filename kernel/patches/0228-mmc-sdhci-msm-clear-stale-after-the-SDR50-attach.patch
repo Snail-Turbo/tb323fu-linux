@@ -1,0 +1,39 @@
+From a3459caaa3fc55fa78e3a4dd78ed49526134d37c Mon Sep 17 00:00:00 2001
+From: li-yiyang <yiyang.li.11pro@outlook.com>
+Date: Tue, 24 Nov 2026 09:09:04 +0800
+Subject: [PATCH] mmc: sdhci-msm: clear stale after the SDR50 attach
+
+o2->stale is set when a calibrated phase stops reading on a registered
+card and is only cleared in o2_forget_card() (a CID change) or at probe.
+With the same card the gate therefore stays closed and the card remains on
+SDR50 until a rebind or reboot, even though the stored phase may read again.
+
+Clear the flag when the SDR50 path is taken: the attach that clamped stays
+at 100 MHz, the next attach runs on SDR50, and the attach after that
+re-scores the stored phase and returns to SDR104.  A forced host-tuning
+failure and a genuinely bad phase still end on SDR50, as before.
+
+Tested on a TB323FU with the Lenovo 58.6 GiB card: three forced-miss rounds
+(12 s2idle resumes) each went 100 MHz clamp -> SDR50 -> 202 MHz, and a
+full_sweep=1 build hit an unforced miss and clamped the same way.
+
+Signed-off-by: li-yiyang <yiyang.li.11pro@outlook.com>
+---
+ drivers/mmc/host/sd-retimer-o2.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/mmc/host/sd-retimer-o2.c b/drivers/mmc/host/sd-retimer-o2.c
+index 38fef47..e62ff0c 100644
+--- a/drivers/mmc/host/sd-retimer-o2.c
++++ b/drivers/mmc/host/sd-retimer-o2.c
+@@ -658,6 +658,7 @@ void o2_retimer_init_card(struct o2_retimer *o2, struct mmc_host *mmc,
+ 	return;
+ 
+ sdr50:
++	o2->stale = false;	/* one SDR50 attach, retry on the next */
+ 	mmc->caps &= ~MMC_CAP_UHS_SDR104;
+ }
+ 
+-- 
+2.53.0
+
